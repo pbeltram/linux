@@ -45,7 +45,7 @@ static const struct iio_buffer_access_funcs iio_cb_access = {
 	.modes = INDIO_BUFFER_SOFTWARE | INDIO_BUFFER_TRIGGERED,
 };
 
-struct iio_cb_buffer *iio_channel_get_all_cb(struct device *dev,
+struct iio_cb_buffer * (struct device *dev,
 					     int (*cb)(const void *data,
 						       void *private),
 					     void *private)
