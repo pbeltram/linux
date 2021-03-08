@@ -53,6 +53,8 @@ ad9081_drv-y := ad9081.o \
 
 obj-$(CONFIG_AD9081) += ad9081_drv.o
 
+obj-$(CONFIG_AD9083) += ad9083.o
+
 ad9361_drv-y := ad9361.o ad9361_conv.o
 ad9361_drv-$(CONFIG_AD9361_EXT_BAND_CONTROL) += ad9361_ext_band_ctrl.o
 obj-$(CONFIG_AD9361) += ad9361_drv.o
