@@ -198,6 +198,8 @@ int adrv9002_axi_interface_set(struct adrv9002_rf_phy *phy, const u8 n_lanes,
 		return -EINVAL;
 	}
 
+	rate = 31;
+
 	axiadc_write(st, AIM_AXI_REG(rx_off, ADI_REG_CNTRL), reg_ctrl);
 	axiadc_write(st, AIM_AXI_REG(tx_off, ADI_TX_REG_RATE), rate);
 	axiadc_write(st, AIM_AXI_REG(tx_off, ADI_TX_REG_CTRL_2), tx_reg_ctrl);
