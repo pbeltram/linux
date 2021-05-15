@@ -1,0 +1,15 @@
+#
+# DPU CMA driver
+#
+
+menu "DPU CMA driver"
+
+config AIDPU_DPUCMA
+	tristate "Enable DPU CMA driver"
+	help
+	 Say Y here to build DPU CMA driver.
+
+	 To compile this driver as module, choose M here: the
+	 module will be called aidpu_dpucma.
+
+endmenu

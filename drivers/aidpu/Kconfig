@@ -1,0 +1,15 @@
+#
+# AI DPU subsystem configuration
+#
+
+menuconfig AIDPU
+	tristate "AI DPU support"
+	help
+	  AI DPU core drivers.
+
+if AIDPU
+
+source "drivers/aidpu/dpucma/Kconfig"
+source "drivers/aidpu/dpu/Kconfig"
+
+endif # AIDPU

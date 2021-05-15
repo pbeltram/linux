@@ -1,0 +1,15 @@
+#
+# AI DPU core driver
+#
+
+menu "AI DPU driver"
+
+config AIDPU_DPU
+	tristate "Enable AI DPU driver"
+	help
+	 Say Y here to build AI DPU driver.
+
+	 To compile this driver as module, choose M here: the
+	 module will be called aidpu_dpu.
+
+endmenu
