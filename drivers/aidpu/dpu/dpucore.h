@@ -40,12 +40,9 @@
 #include <linux/version.h>
 #include <linux/wait.h>
 
-// From Petalinux Makefile.
-#define CONFIG_DPU_v1_3_0
-#define SIG_BASE_ADDR 0X8FF00000
-
 #include "dpudef.h"
 
+/*----------------------------------------------------------------------------*/
 #define DPU_DRIVER_VERSION "3.0.0"
 
 #define DPU_IDLE 0
@@ -56,109 +53,128 @@
 
 #define MAX_CORE_NUM 4
 
-#define PLEVEL_ERR 9
-#define PLEVEL_INFO 5
-#define PLEVEL_DBG 1
-
 #define MAX_REG_NUM 32
+/*----------------------------------------------------------------------------*/
 
-#define dprint(level, fmt, args...)                          		\
-	do {                                                       	\
-		if ((level) >= debuglevel)                              \
-			printk(KERN_ERR "[DPU][%d]" fmt, current->pid,  \
-			       ##args);                                 \
-	} while (0)
+/*----------------------------------------------------------------------------*/
+/* Unconditional logging */
+#define LOG(fmt, args... )     printk(KERN_INFO "[DPU]" fmt, ## args)
+#define WARNING(fmt, args... ) printk(KERN_WARNING "[DPU]" fmt, ## args)
+#define ERROR(fmt, args... )   printk(KERN_ERR "[DPU]" fmt, ## args)
+/*----------------------------------------------------------------------------*/
 
-#define dpr_init(fmt, args...) pr_alert("[DPU][%d]" fmt, current->pid, ##args);
+/*----------------------------------------------------------------------------*/
+/* Conditional logging */
+#define PLEVEL_ERR  9
+#define PLEVEL_INFO 5
+#define PLEVEL_DBG  1
 
+#define LEVEL  KERN_INFO
+#define __PDEBUG(level, fmt, args...)                       \
+  do {                                                      \
+    if ((level) >= debuglevel)                              \
+      printk(LEVEL "[DPU][%d]" fmt, current->pid, ##args);  \
+  } while (0)
+/*----------------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------------*/
 /*dpu registers*/
 typedef struct __DPUReg {
-	/*dpu pmu registers*/
-	struct __regs_dpu_pmu {
-		volatile uint32_t version;
-		volatile uint32_t reset;
-		volatile uint32_t _rsv[62];
-	} pmu;
+  /*dpu pmu registers*/
+  struct __regs_dpu_pmu {
+    volatile uint32_t version;
+    volatile uint32_t reset;
+    volatile uint32_t _rsv[62];
+  } pmu;
 
-	/*dpu rgbout registers*/
-	struct __regs_dpu_rgbout {
-		volatile uint32_t display;
-		volatile uint32_t _rsv[63];
-	} rgbout;
+  /*dpu rgbout registers*/
+  struct __regs_dpu_rgbout {
+    volatile uint32_t display;
+    volatile uint32_t _rsv[63];
+  } rgbout;
 
-	/*dpu control registers struct*/
-	struct __regs_dpu_ctrl {
-		volatile uint32_t hp_ctrl;
-		volatile uint32_t addr_io;
-		volatile uint32_t addr_weight;
-		volatile uint32_t addr_code;
-		volatile uint32_t addr_prof;
-		volatile uint32_t prof_value;
-		volatile uint32_t prof_num;
-		volatile uint32_t prof_en;
-		volatile uint32_t start;
-		volatile uint32_t com_addr[16]; //< extension for DPUv1.3.0
-		volatile uint32_t _rsv[39];
+  /*dpu control registers struct*/
+  struct __regs_dpu_ctrl {
+    volatile uint32_t hp_ctrl;
+    volatile uint32_t addr_io;
+    volatile uint32_t addr_weight;
+    volatile uint32_t addr_code;
+    volatile uint32_t addr_prof;
+    volatile uint32_t prof_value;
+    volatile uint32_t prof_num;
+    volatile uint32_t prof_en;
+    volatile uint32_t start;
+    volatile uint32_t com_addr[16]; //< extension for DPUv1.3.0
+    volatile uint32_t _rsv[39];
 
-	} ctlreg[MAX_CORE_NUM];
+  } ctlreg[MAX_CORE_NUM];
 
-	/*dpu interrupt registers struct*/
-	struct __regs_dpu_intr {
-		volatile uint32_t isr;
-		volatile uint32_t imr;
-		volatile uint32_t irsr;
-		volatile uint32_t icr;
-		volatile uint32_t _rsv[60];
+  /*dpu interrupt registers struct*/
+  struct __regs_dpu_intr {
+    volatile uint32_t isr;
+    volatile uint32_t imr;
+    volatile uint32_t irsr;
+    volatile uint32_t icr;
+    volatile uint32_t _rsv[60];
 
-	} intreg;
+  } intreg;
 
 } DPUReg;
+/*----------------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------------*/
 /*dpu device struct*/
 struct dpu_dev {
-	struct miscdevice dev; //< dpu device
+  struct miscdevice dev; //< dpu device
 
-	atomic_t core; //< dpu core number available
-	atomic_t ref_count; //< dpu device open count
+  atomic_t core; //< dpu core number available
+  atomic_t ref_count; //< dpu device open count
 
-	struct semaphore sem; //< task semaphore, in simple schedule strategy
+  struct semaphore sem; //< task semaphore, in simple schedule strategy
 
-	struct list_head tasklist; //< task list waiting
+  struct list_head tasklist; //< task list waiting
 
-	wait_queue_head_t waitqueue[MAX_CORE_NUM]; //< waitqueue of each DPU
+  wait_queue_head_t waitqueue[MAX_CORE_NUM]; //< waitqueue of each DPU
 
-	int irq_no[MAX_CORE_NUM]; //< interrupt NO. of DPU
-	pid_t pid[MAX_CORE_NUM]; //< pid of current task
-	int state[MAX_CORE_NUM]; //< state of DPU (IDEL/RUNNING)
-	unsigned long task_id[MAX_CORE_NUM]; //< task id of current task
-	u64 time_start[MAX_CORE_NUM]; //< start time of current task
-	u64 time_end[MAX_CORE_NUM]; //< finish time of current task
+  int irq_no[MAX_CORE_NUM]; //< interrupt NO. of DPU
+  pid_t pid[MAX_CORE_NUM]; //< pid of current task
+  int state[MAX_CORE_NUM]; //< state of DPU (IDEL/RUNNING)
+  unsigned long task_id[MAX_CORE_NUM]; //< task id of current task
+  u64 time_start[MAX_CORE_NUM]; //< start time of current task
+  u64 time_end[MAX_CORE_NUM]; //< finish time of current task
 
-	int intflg[MAX_CORE_NUM];
+  int intflg[MAX_CORE_NUM];
 };
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /*task node struct*/
 struct task_node {
-	unsigned long task_id;
-	unsigned long pid;
-	unsigned long priority;
+  unsigned long task_id;
+  unsigned long pid;
+  unsigned long priority;
 
-	wait_queue_head_t runwait;
-	struct semaphore runsem;
-	struct list_head list;
+  wait_queue_head_t runwait;
+  struct semaphore runsem;
+  struct list_head list;
 };
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /*memory block node struct*/
 struct memblk_node {
-	unsigned long size;
-	unsigned long virt_addr;
-	dma_addr_t phy_addr;
-	pid_t pid;
-	struct list_head list;
+  unsigned long size;
+  unsigned long virt_addr;
+  dma_addr_t phy_addr;
+  pid_t pid;
+  struct list_head list;
 };
+/*----------------------------------------------------------------------------*/
 
-//////////////////////////////////////////////////
+/*----------------------------------------------------------------------------*/
 // helper functions declare
 struct device_node *dpu_compatible_node(const char *compat);
-//////////////////////////////////////////////////
+/*----------------------------------------------------------------------------*/
+
 #endif /*_DPU_H_*/
 

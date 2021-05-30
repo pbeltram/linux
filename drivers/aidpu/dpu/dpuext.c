@@ -10,15 +10,19 @@
 #include <linux/delay.h>
 #include "dpucore.h"
 
+/*----------------------------------------------------------------------------*/
 extern uint debuglevel;
 extern uint accipmask;
 extern uint timeout;
-
 extern dpu_caps_t dpu_caps;
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 run_smfc_t run_smfc;
 run_resize_t run_resize;
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /**
  * init_ext - initialize dpu extension modules
  * @pnode  : the dpu device tree node
@@ -30,25 +34,27 @@ int init_ext(struct device_node *pdpunode)
 	int ret = 0;
 	struct device_node *node;
 
-	dprint(PLEVEL_INFO, "[PID %i]name:%s,func:%s\n", current->pid, current->comm, __func__);
+	__PDEBUG(PLEVEL_INFO, "name:%s,func:%s\n", current->comm, __func__);
 
 	node = dpu_compatible_node("smfc");
 	if (node && (dpu_caps.softmax.valid || dpu_caps.fullconnect.valid)) {
 		uint32_t reg_base, reg_size;
-		dpr_init("Init SMFC IP...\n");
+		dev_info(dev_handler, "Init SMFC IP...\n");
 
 		// register smfc interrupt isr
 		run_smfc.irqno = irq_of_parse_and_map(node, 0);
 		if (run_smfc.irqno < 0) {
-			dpr_init("SMFC IRQ res not found!\n");
+			dev_err(dev_handler, "SMFC IRQ res not found!\n");
 			return run_smfc.irqno;
 		}
+
 		ret = request_irq(run_smfc.irqno, (irq_handler_t)dpu_ext_isr, 0, "dpu_smfc", NULL);
 		if (ret != 0) {
-			dpr_init("Request SMFC IRQ %d failed!\n", run_smfc.irqno);
+			dev_err(dev_handler, "Request SMFC IRQ %d failed!\n", run_smfc.irqno);
 			return ret;
-		} else {
-			dpr_init("Request SMFC IRQ %d successful.", run_smfc.irqno);
+		}
+		else {
+			dev_info(dev_handler, "Request SMFC IRQ %d successful.", run_smfc.irqno);
 		}
 
 		// map smfc register
@@ -58,7 +64,7 @@ int init_ext(struct device_node *pdpunode)
 		reg_size = DPU_EXT_SMFC_SIZE;
 		run_smfc.regs = (ioremap(reg_base, reg_size));
 		if (!run_smfc.regs) {
-			dpr_init("Map SMFC registers error!\n");
+			dev_err(dev_handler, "Map SMFC registers error!\n");
 			return -EINVAL;
 		}
 
@@ -69,8 +75,9 @@ int init_ext(struct device_node *pdpunode)
 
 		accipmask |= (dpu_caps.softmax.valid ? DPU_EXT_SOFTMAX : 0);
 		accipmask |= (dpu_caps.fullconnect.valid ? DPU_EXT_FULLCONNECT : 0);
-		dpr_init("Init SMFC IP done\n");
-	} else {
+		dev_info(dev_handler, "Init SMFC IP done\n");
+	}
+	else {
 		dpu_caps.fullconnect.enable = 0;
 		dpu_caps.softmax.enable = 0;
 	}
@@ -80,21 +87,22 @@ int init_ext(struct device_node *pdpunode)
 	if (node && dpu_caps.resize.valid) {
 		uint32_t reg_base, reg_size;
 
-		dpr_init("init Resize IP...\n");
+		dev_info(dev_handler, "Init Resize IP...\n");
 
 		// register smfc interrupt isr
 		run_resize.irqno = irq_of_parse_and_map(node, 0);
 		if (run_resize.irqno < 0) {
-			dpr_init("Resize IRQ res not found!\n");
+			dev_err(dev_handler, "Resize IRQ res not found!\n");
 			return run_resize.irqno;
 		}
 		ret = request_irq(run_resize.irqno, (irq_handler_t)dpu_ext_isr, 0, "dpu_resize",
 				  NULL);
 		if (ret != 0) {
-			dpr_init("Request Resize IRQ %d failed!\n", run_resize.irqno);
+			dev_err(dev_handler, "Request Resize IRQ %d failed!\n", run_resize.irqno);
 			return ret;
-		} else {
-			dpr_init("Request Resize IRQ %d successful.", run_resize.irqno);
+		}
+		else {
+			dev_info(dev_handler, "Request Resize IRQ %d successful.", run_resize.irqno);
 		}
 
 		// map smfc register
@@ -104,7 +112,7 @@ int init_ext(struct device_node *pdpunode)
 		reg_size = DPU_EXT_RESIZE_SIZE;
 		run_resize.regs = (ioremap(reg_base, reg_size));
 		if (!run_resize.regs) {
-			dpr_init("Map Resize registers error!\n");
+			dev_err(dev_handler, "Map Resize registers error!\n");
 			return -EINVAL;
 		}
 
@@ -114,13 +122,16 @@ int init_ext(struct device_node *pdpunode)
 		run_resize.timeout = timeout * USER_HZ;
 
 		accipmask |= DPU_EXT_RESIZE;
-	} else {
+	}
+	else {
 		dpu_caps.resize.enable = 0;
 	}
 
 	return ret;
 }
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /**
  * exit_ext - called when unloading extend modules
  */
@@ -130,13 +141,19 @@ void exit_ext(void)
 		// clean smfc moudle
 		iounmap(run_smfc.regs);
 		free_irq(run_smfc.irqno, NULL);
+    dev_info(dev_handler, "Exit SMFC IP.\n");
 	}
+
 	if (accipmask & DPU_EXT_RESIZE) {
 		// clean resize moudle
 		iounmap(run_resize.regs);
 		free_irq(run_resize.irqno, NULL);
+    dev_info(dev_handler, "Exit Resize IP.\n");
 	}
 }
+/*----------------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------------*/
 /**
  * dpu_ext_isr - dpu extension modules isr
  * @irq  : interrupt number
@@ -144,7 +161,8 @@ void exit_ext(void)
  */
 irqreturn_t dpu_ext_isr(int irq, void *data)
 {
-	dprint(PLEVEL_DBG, "ext_isr, irq = %d\n", irq);
+	__PDEBUG(PLEVEL_DBG, "ext_isr, irq = %d\n", irq);
+
 	if (irq == run_smfc.irqno) {
 		if (accipmask & (DPU_EXT_SOFTMAX | DPU_EXT_FULLCONNECT)) {
 			run_smfc.intflg = TRUE;
@@ -154,7 +172,8 @@ irqreturn_t dpu_ext_isr(int irq, void *data)
 
 			wake_up_interruptible(&run_smfc.wq);
 		}
-	} else if (irq == run_resize.irqno) {
+	}
+	else if (irq == run_resize.irqno) {
 		if (accipmask & DPU_EXT_RESIZE) {
 			run_resize.intflg = TRUE;
 			// clear resize interrupt
@@ -165,9 +184,12 @@ irqreturn_t dpu_ext_isr(int irq, void *data)
 			wake_up_interruptible(&run_resize.wq);
 		}
 	}
+
 	return IRQ_HANDLED;
 }
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /**
  * _show_ext_regs - show dpu extension module registers
  * @mask  : extension module's mask
@@ -179,7 +201,7 @@ inline void _show_ext_regs(struct seq_file *file, u32 mask)
 	char *msg = kzalloc(msg_len, GFP_KERNEL);
 
 	if (!msg) {
-		dpr_init("kzalloc fail in _show_ext_regs !\n");
+		dev_err(dev_handler, "kzalloc fail in _show_ext_regs.\n");
 		return;
 	}
 
@@ -205,10 +227,10 @@ inline void _show_ext_regs(struct seq_file *file, u32 mask)
 		idx += snprintf(msg + idx, ((msg_len - idx) > 0 ? (msg_len - idx) : 0),
 				"%-8s\t: 0x%.8x\n", "START", run_smfc.regs->start);
 		idx += snprintf(msg + idx, ((msg_len - idx) > 0 ? (msg_len - idx) : 0),
-				"%-8s\t: 0x%.8x\n", "FC_INPUT_CHANNEL",
+				"%-8s\t: 0x%.8x\n", "FC_INP_CHANNEL",
 				run_smfc.regs->fc_input_channel);
 		idx += snprintf(msg + idx, ((msg_len - idx) > 0 ? (msg_len - idx) : 0),
-				"%-8s\t: 0x%.8x\n", "FC_OUTPUT_CHANNEL",
+				"%-8s\t: 0x%.8x\n", "FC_OUT_CHANNEL",
 				run_smfc.regs->fc_output_channel);
 		idx += snprintf(msg + idx, ((msg_len - idx) > 0 ? (msg_len - idx) : 0),
 				"%-8s\t: 0x%.8x\n", "FC_BATCH", run_smfc.regs->fc_batch);
@@ -224,6 +246,7 @@ inline void _show_ext_regs(struct seq_file *file, u32 mask)
 		idx += snprintf(msg + idx, ((msg_len - idx) > 0 ? (msg_len - idx) : 0),
 				"%-8s\t: 0x%.8x\n", "FC_RELU_EN", run_smfc.regs->fc_relu_en);
 	}
+
 	if (mask & DPU_EXT_RESIZE) {
 		idx += snprintf(msg + idx, ((msg_len - idx) > 0 ? (msg_len - idx) : 0),
 				"[RESIZE Registers]\n");
@@ -259,13 +282,16 @@ inline void _show_ext_regs(struct seq_file *file, u32 mask)
 
 	if (file) {
 		seq_printf(file, msg);
-	} else {
-		dprint(PLEVEL_ERR, "%s", msg);
+	}
+	else {
+		dev_info(dev_handler, "%s", msg);
 	}
 
 	kfree(msg);
 }
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /**
  * dpu_softmax - softmax calculation acceleration using SMFC IP
  * @para : softmax parameter structure
@@ -277,8 +303,9 @@ int dpu_softmax(struct ioc_softmax_t *para)
 	int ret = 0;
 
 	while (down_interruptible(&run_smfc.sem) < 0) {
-		dprint(PLEVEL_DBG, "Interrupted when acquiring semaphore of smfc\n");
+		__PDEBUG(PLEVEL_DBG, "Interrupted when acquiring semaphore of SMFC.\n");
 	}
+
 	// write softmax parameters
 	iowrite32(para->width, &run_smfc.regs->sm_len_x);
 	iowrite32(para->height, &run_smfc.regs->sm_len_y);
@@ -296,18 +323,21 @@ int dpu_softmax(struct ioc_softmax_t *para)
 	iowrite32(0, &run_smfc.regs->start);
 
 	ret = wait_event_interruptible_timeout(run_smfc.wq, run_smfc.intflg == TRUE,
-					       run_smfc.timeout);
+	    run_smfc.timeout);
 	run_smfc.intflg = FALSE;
+
 	up(&run_smfc.sem);
 
 	if (ret == 0) {
-		dprint(PLEVEL_ERR, "softmax timeout!\n");
+		dev_err(dev_handler, "SMFC timeout.\n");
 		_show_ext_regs(NULL, DPU_EXT_SOFTMAX);
 	}
 
 	return ret > 0 ? 0 : (ret == 0 ? -ETIMEDOUT : ret);
 }
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 /**
  * dpu_fullconnect - fullconnect calculation acceleration using SMFC IP
  * @para : fullconnect parameter structure
@@ -319,7 +349,7 @@ int dpu_fullconnect(struct ioc_fc_t *para)
 	int ret = 0;
 
 	while (down_interruptible(&run_smfc.sem) < 0) {
-		dprint(PLEVEL_DBG, "Interrupted when acquiring semaphore of smfc\n");
+		__PDEBUG(PLEVEL_DBG, "Interrupted when acquiring semaphore of SMFC.\n");
 	}
 
 	iowrite32(para->src, &run_smfc.regs->src);
@@ -341,18 +371,21 @@ int dpu_fullconnect(struct ioc_fc_t *para)
 	iowrite32(0, &run_smfc.regs->start);
 
 	ret = wait_event_interruptible_timeout(run_smfc.wq, run_smfc.intflg == TRUE,
-					       run_smfc.timeout);
+	    run_smfc.timeout);
 	run_smfc.intflg = FALSE;
 
 	up(&run_smfc.sem);
 
 	if (ret == 0) {
-		dprint(PLEVEL_ERR, "fc timeout!\n");
+		dev_err(dev_handler, "SMFC timeout in fullconnect.\n");
 		_show_ext_regs(NULL, DPU_EXT_SOFTMAX);
 	}
+
 	return ret > 0 ? 0 : (ret == 0 ? -ETIMEDOUT : ret);
 }
+/*----------------------------------------------------------------------------*/
 
+/*----------------------------------------------------------------------------*/
 #if 0 //resize not enable now
 /**
  * dpu_resize - resize calculation acceleration using RESIZE IP
@@ -366,7 +399,7 @@ int dpu_resize(run_resize_t *para)
 	u32 size = 0;
 
 	while (down_interruptible(&run_resize.sem) < 0) {
-		dprint(PLEVEL_DBG, "Interrupted when acquiring semaphore of resize\n");
+		__PDEBUG(PLEVEL_DBG, "Interrupted when acquiring semaphore of resize.\n");
 	}
 
 	// write resize parameters
@@ -394,10 +427,11 @@ int dpu_resize(run_resize_t *para)
 	up(&run_resize.sem);
 
 	if (ret == 0) {
-		dprint(PLEVEL_ERR, "resize timeout!\n");
+		dev_err(dev_handler, "Resize timeout.\n");
 		_show_ext_regs(NULL, DPU_EXT_RESIZE);
 	}
 
 	return ret > 0 ? 0 : (ret == 0 ? -ETIMEDOUT : ret);
 }
 #endif
+/*----------------------------------------------------------------------------*/
