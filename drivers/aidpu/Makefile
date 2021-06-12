@@ -6,4 +6,5 @@
 obj-y += dpucma/
 obj-y += dpu/
 
-subdir-ccflags-y +=  $(DBGDRIVER_CFLAGS)
+subdir-ccflags-y +=  $(DBGDRIVER_CFLAGS) -Wno-error=date-time
+

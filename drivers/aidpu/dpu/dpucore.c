@@ -101,7 +101,7 @@ unsigned long dpu_alloc_mem(uint32_t memsize)
   virtaddr = dma_alloc_coherent(dev_handler, memsize, &phy_addr, GFP_KERNEL);
   if (NULL != virtaddr) {
     pnewnode = kmalloc(sizeof(struct memblk_node), GFP_KERNEL);
-    __PDEBUG(PLEVEL_DBG, "Alloc Mem:0x%pad size=0x%x.\n", phy_addr, memsize);
+    __PDEBUG(PLEVEL_DBG, "Alloc Mem:0x%llx size=0x%x.\n", phy_addr, memsize);
 
     if (pnewnode) {
       pnewnode->virt_addr = (unsigned long)virtaddr;

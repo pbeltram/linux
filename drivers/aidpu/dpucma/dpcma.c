@@ -110,7 +110,7 @@ static int dpcma_close(struct inode *inodep, struct file *filp)
     struct dpcma_block_t *h = list_entry(plist, struct dpcma_block_t, head);
     dma_free_coherent(cma->dev->dmadev, h->capacity, h->virt_addr, h->dma_addr);
 
-    __PDEBUG(PLEVEL_INFO, "Free cma blocks 0x%x 0x%x %p 0x%x\n",
+    __PDEBUG(PLEVEL_INFO, "Free cma blocks 0x%lx 0x%llx %p 0x%lx\n",
         h->phy_addr, h->dma_addr, h->virt_addr, h->capacity);
 
     list_del(plist);
@@ -138,7 +138,7 @@ static long show(struct dpcma_t *cma)
 
   __PDEBUG(PLEVEL_INFO, "Start dump %s.\n", cma->dev->sysdev.name);
   list_for_each_entry(h, &cma->head, head) {
-    __PDEBUG(PLEVEL_INFO, "Table 0x%x 0x%x 0x%x %p\n",
+    __PDEBUG(PLEVEL_INFO, "Table 0x%lx 0x%llx 0x%lx %p\n",
         h->phy_addr, h->dma_addr, h->capacity, h->virt_addr);
   }
 
@@ -173,7 +173,7 @@ static long cma_alloc(struct dpcma_t *cma, struct dpcma_req_alloc *req)
   new_data->virt_addr = dma_alloc_coherent(cma->dev->dmadev, new_data->capacity,
       &new_data->dma_addr, GFP_KERNEL);
   if (new_data->virt_addr == NULL) {
-    dev_err(cma->dev->dmadev, "Not enough dma memory: size = 0x%x dev=(%d %d)\n",
+    dev_err(cma->dev->dmadev, "Not enough dma memory: size = 0x%lx dev=(%d %d)\n",
         new_data->capacity, MAJOR(cma->dev->dmadev->devt), MINOR(cma->dev->dmadev->devt));
 
     goto END2;
@@ -187,7 +187,7 @@ static long cma_alloc(struct dpcma_t *cma, struct dpcma_req_alloc *req)
 
   list_add(&new_data->head, &cma->head);
 
-  dev_info(cma->dev->dmadev, "Alloc 0x%x 0x%x\n", new_data->phy_addr, new_data->capacity);
+  dev_info(cma->dev->dmadev, "Alloc 0x%lx 0x%lx\n", new_data->phy_addr, new_data->capacity);
 
   return ret;
 
@@ -220,7 +220,7 @@ static long cma_free(struct dpcma_t *cma, struct dpcma_req_free *req)
     if (phy_addr == h->phy_addr) {
       dma_free_coherent(cma->dev->dmadev, h->capacity, h->virt_addr, h->dma_addr);
 
-      dev_info(cma->dev->dmadev, "Free 0x%x 0x%x.\n", phy_addr, h->capacity);
+      dev_info(cma->dev->dmadev, "Free 0x%lx 0x%lx.\n", phy_addr, h->capacity);
 
       list_del(plist);
       kfree(plist);
@@ -271,7 +271,7 @@ static long cma_sync(struct dpcma_t *cma, struct dpcma_req_sync *req)
         dma_sync_single_for_device(cma->dev->dmadev, h->dma_addr + offset, size, DMA_TO_DEVICE);
       }
 
-      __PDEBUG(PLEVEL_INFO, "Sync req.phy_addr=0x%x dma_addr=0x%x capacity=0x%x size=0x%x dir=%d.\n",
+      __PDEBUG(PLEVEL_INFO, "Sync req.phy_addr=0x%lx dma_addr=0x%llx capacity=0x%lx size=0x%lx dir=%d.\n",
           phy_addr, h->dma_addr, h->capacity, size, direction);
     }
   }
