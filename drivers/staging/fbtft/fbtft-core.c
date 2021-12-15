@@ -317,7 +317,7 @@ static void fbtft_mkdirty(struct fb_info *info, int y, int height)
 	/* special case, needed ? */
 	if (y == -1) {
 		y = 0;
-		height = info->var.yres;
+		height = info->var.yres - 1;
 	}
 
 	/* Mark display lines/area as dirty */

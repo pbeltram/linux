@@ -3,6 +3,7 @@
  * Copyright (C) 2012-2013, Analog Devices Inc.
  * Author: Lars-Peter Clausen <lars@metafoo.de>
  */
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -42,8 +43,6 @@ struct axi_spdif {
 
 	struct snd_ratnum ratnum;
 	struct snd_pcm_hw_constraint_ratnums rate_constraints;
-
-	bool clk_ref_running;
 };
 
 static int axi_spdif_trigger(struct snd_pcm_substream *substream, int cmd,
@@ -79,7 +78,6 @@ static int axi_spdif_hw_params(struct snd_pcm_substream *substream,
 	struct axi_spdif *spdif = snd_soc_dai_get_drvdata(dai);
 	unsigned int rate = params_rate(params);
 	unsigned int clkdiv, stat;
-	int ret;
 
 	switch (params_rate(params)) {
 	case 32000:
@@ -96,9 +94,6 @@ static int axi_spdif_hw_params(struct snd_pcm_substream *substream,
 		break;
 	}
 
-	/* Try to set the master clock */
-	clk_set_rate(spdif->clk_ref, rate * 128);
-
 	clkdiv = DIV_ROUND_CLOSEST(clk_get_rate(spdif->clk_ref),
 			rate * 64 * 2) - 1;
 	clkdiv <<= AXI_SPDIF_CTRL_CLKDIV_OFFSET;
@@ -106,16 +101,6 @@ static int axi_spdif_hw_params(struct snd_pcm_substream *substream,
 	regmap_write(spdif->regmap, AXI_SPDIF_REG_STAT, stat);
 	regmap_update_bits(spdif->regmap, AXI_SPDIF_REG_CTRL,
 		AXI_SPDIF_CTRL_CLKDIV_MASK, clkdiv);
-
-	if (!spdif->clk_ref_running) {
-		ret = clk_prepare_enable(spdif->clk_ref);
-		if (ret)
-			return ret;
-		spdif->clk_ref_running = true;
-	}
-
-	regmap_update_bits(spdif->regmap, AXI_SPDIF_REG_CTRL,
-		AXI_SPDIF_CTRL_TXEN, AXI_SPDIF_CTRL_TXEN);
 
 	return 0;
 }
@@ -135,13 +120,18 @@ static int axi_spdif_startup(struct snd_pcm_substream *substream,
 	struct axi_spdif *spdif = snd_soc_dai_get_drvdata(dai);
 	int ret;
 
-	if (spdif->rate_constraints.nrats) {
-		ret = snd_pcm_hw_constraint_ratnums(substream->runtime, 0,
-				SNDRV_PCM_HW_PARAM_RATE,
-				&spdif->rate_constraints);
-		if (ret)
-			return ret;
-	}
+	ret = snd_pcm_hw_constraint_ratnums(substream->runtime, 0,
+			   SNDRV_PCM_HW_PARAM_RATE,
+			   &spdif->rate_constraints);
+	if (ret)
+		return ret;
+
+	ret = clk_prepare_enable(spdif->clk_ref);
+	if (ret)
+		return ret;
+
+	regmap_update_bits(spdif->regmap, AXI_SPDIF_REG_CTRL,
+		AXI_SPDIF_CTRL_TXEN, AXI_SPDIF_CTRL_TXEN);
 
 	return 0;
 }
@@ -154,10 +144,7 @@ static void axi_spdif_shutdown(struct snd_pcm_substream *substream,
 	regmap_update_bits(spdif->regmap, AXI_SPDIF_REG_CTRL,
 		AXI_SPDIF_CTRL_TXEN, 0);
 
-	if (spdif->clk_ref_running) {
-		clk_disable_unprepare(spdif->clk_ref);
-		spdif->clk_ref_running = false;
-	}
+	clk_disable_unprepare(spdif->clk_ref);
 }
 
 static const struct snd_soc_dai_ops axi_spdif_dai_ops = {
@@ -195,7 +182,6 @@ static int axi_spdif_probe(struct platform_device *pdev)
 	struct resource *res;
 	void __iomem *base;
 	int ret;
-	long rate;
 
 	spdif = devm_kzalloc(&pdev->dev, sizeof(*spdif), GFP_KERNEL);
 	if (!spdif)
@@ -229,18 +215,14 @@ static int axi_spdif_probe(struct platform_device *pdev)
 	spdif->dma_data.addr_width = 4;
 	spdif->dma_data.maxburst = 1;
 
-	/* Determine if the clock rate is fixed. If it cannot change frequency,
-	 * it returns an error or it will simply return its fixed value. */
-	rate = clk_round_rate(spdif->clk_ref, 128 * 44100);
-	if (rate < 0 || rate != clk_round_rate(spdif->clk_ref, 128 * 48000)) {
-		spdif->ratnum.num = clk_get_rate(spdif->clk_ref) / 128;
-		spdif->ratnum.den_step = 1;
-		spdif->ratnum.den_min = 1;
-		spdif->ratnum.den_max = 64;
+	spdif->ratnum.num = clk_get_rate(spdif->clk_ref) / 128;
+	spdif->ratnum.den_step = 1;
+	spdif->ratnum.den_min = 1;
+	spdif->ratnum.den_max = 64;
 
-		spdif->rate_constraints.rats = &spdif->ratnum;
-		spdif->rate_constraints.nrats = 1;
-	}
+	spdif->rate_constraints.rats = &spdif->ratnum;
+	spdif->rate_constraints.nrats = 1;
+
 	ret = devm_snd_soc_register_component(&pdev->dev, &axi_spdif_component,
 					 &axi_spdif_dai, 1);
 	if (ret)

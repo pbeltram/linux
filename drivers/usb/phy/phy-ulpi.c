@@ -13,9 +13,16 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/export.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/io.h>
+#include <linux/of_address.h>
+#include <linux/of_device.h>
+#include <linux/platform_device.h>
 #include <linux/usb.h>
 #include <linux/usb/otg.h>
 #include <linux/usb/ulpi.h>
+#include <linux/usb/phy.h>
 
 
 struct ulpi_info {
@@ -37,6 +44,13 @@ static struct ulpi_info ulpi_ids[] = {
 	ULPI_INFO(ULPI_ID(0x0424, 0x0007), "SMSC USB3320"),
 	ULPI_INFO(ULPI_ID(0x0424, 0x0009), "SMSC USB334x"),
 	ULPI_INFO(ULPI_ID(0x0451, 0x1507), "TI TUSB1210"),
+};
+
+struct ulpi_phy {
+	struct usb_phy	*usb_phy;
+	void __iomem *regs;
+	unsigned int vp_offset;
+	unsigned int flags;
 };
 
 static int ulpi_set_otg_flags(struct usb_phy *phy)
@@ -240,6 +254,23 @@ static int ulpi_set_vbus(struct usb_otg *otg, bool on)
 	return usb_phy_io_write(phy, flags, ULPI_OTG_CTRL);
 }
 
+static int usbphy_set_vbus(struct usb_phy *phy, int on)
+{
+	unsigned int flags = usb_phy_io_read(phy, ULPI_OTG_CTRL);
+
+	flags &= ~(ULPI_OTG_CTRL_DRVVBUS | ULPI_OTG_CTRL_DRVVBUS_EXT);
+
+	if (on) {
+		if (phy->flags & ULPI_OTG_DRVVBUS)
+			flags |= ULPI_OTG_CTRL_DRVVBUS;
+
+		if (phy->flags & ULPI_OTG_DRVVBUS_EXT)
+			flags |= ULPI_OTG_CTRL_DRVVBUS_EXT;
+	}
+
+	return usb_phy_io_write(phy, flags, ULPI_OTG_CTRL);
+}
+
 struct usb_phy *
 otg_ulpi_create(struct usb_phy_io_ops *ops,
 		unsigned int flags)
@@ -262,6 +293,7 @@ otg_ulpi_create(struct usb_phy_io_ops *ops,
 	phy->io_ops	= ops;
 	phy->otg	= otg;
 	phy->init	= ulpi_init;
+	phy->set_vbus	= usbphy_set_vbus;
 
 	otg->usb_phy	= phy;
 	otg->set_host	= ulpi_set_host;

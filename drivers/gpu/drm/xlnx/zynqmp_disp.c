@@ -40,6 +40,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
+#include <video/videomode.h>
 
 #include "xlnx_bridge.h"
 #include "xlnx_crtc.h"
@@ -276,10 +277,10 @@ static const u32 zynqmp_disp_gfx_init_fmts[] = {
 #define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_10		0x2
 #define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_12		0x3
 #define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_MASK		GENMASK(2, 0)
-#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_RGB		0x0
-#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV444	0x1
-#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV422	0x2
-#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YONLY	0x3
+#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_RGB		0x00
+#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV444	0x10
+#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV422	0x20
+#define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YONLY	0x30
 #define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_MASK		GENMASK(5, 4)
 #define ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_CB_FIRST		BIT(8)
 #define ZYNQMP_DISP_AV_BUF_PALETTE_MEMORY		0x400
@@ -496,6 +497,7 @@ struct zynqmp_disp {
 	bool audclk_en;
 	struct clk *aclk;
 	bool aclk_en;
+	struct xlnx_bridge *vtc_bridge;
 };
 
 /**
@@ -1192,7 +1194,7 @@ static const struct zynqmp_disp_fmt av_buf_gfx_fmts[] = {
 static const struct zynqmp_disp_fmt av_buf_live_fmts[] = {
 	{
 		.bus_fmt	= MEDIA_BUS_FMT_RGB666_1X18,
-		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_6 ||
+		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_6 |
 				  ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_RGB,
 		.rgb		= true,
 		.swap		= false,
@@ -1202,7 +1204,7 @@ static const struct zynqmp_disp_fmt av_buf_live_fmts[] = {
 		.sf[2]		= ZYNQMP_DISP_AV_BUF_6BIT_SF,
 	}, {
 		.bus_fmt	= MEDIA_BUS_FMT_RBG888_1X24,
-		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_8 ||
+		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_8 |
 				  ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_RGB,
 		.rgb		= true,
 		.swap		= false,
@@ -1212,7 +1214,7 @@ static const struct zynqmp_disp_fmt av_buf_live_fmts[] = {
 		.sf[2]		= ZYNQMP_DISP_AV_BUF_8BIT_SF,
 	}, {
 		.bus_fmt	= MEDIA_BUS_FMT_UYVY8_1X16,
-		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_8 ||
+		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_8 |
 				  ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV422,
 		.rgb		= false,
 		.swap		= false,
@@ -1222,7 +1224,7 @@ static const struct zynqmp_disp_fmt av_buf_live_fmts[] = {
 		.sf[2]		= ZYNQMP_DISP_AV_BUF_8BIT_SF,
 	}, {
 		.bus_fmt	= MEDIA_BUS_FMT_VUY8_1X24,
-		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_8 ||
+		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_8 |
 				  ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV444,
 		.rgb		= false,
 		.swap		= false,
@@ -1232,7 +1234,7 @@ static const struct zynqmp_disp_fmt av_buf_live_fmts[] = {
 		.sf[2]		= ZYNQMP_DISP_AV_BUF_8BIT_SF,
 	}, {
 		.bus_fmt	= MEDIA_BUS_FMT_UYVY10_1X20,
-		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_10 ||
+		.disp_fmt	= ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_BPC_10 |
 				  ZYNQMP_DISP_AV_BUF_LIVE_CONFIG_FMT_YUV422,
 		.rgb		= false,
 		.swap		= false,
@@ -2358,107 +2360,6 @@ uint32_t zynqmp_disp_get_crtc_mask(struct zynqmp_disp *disp)
 }
 
 /*
- * Xlnx bridge functions
- */
-
-static inline struct zynqmp_disp_layer
-*bridge_to_layer(struct xlnx_bridge *bridge)
-{
-	return container_of(bridge, struct zynqmp_disp_layer, bridge);
-}
-
-static int zynqmp_disp_bridge_enable(struct xlnx_bridge *bridge)
-{
-	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
-	struct zynqmp_disp *disp = layer->disp;
-	int ret;
-
-	if (!disp->_pl_pclk) {
-		dev_err(disp->dev, "PL clock is required for live\n");
-		return -ENODEV;
-	}
-
-	ret = zynqmp_disp_layer_check_size(disp, layer, layer->w, layer->h);
-	if (ret)
-		return ret;
-
-	zynqmp_disp_set_g_alpha(disp, disp->alpha_en);
-	zynqmp_disp_set_alpha(disp, disp->alpha);
-	ret = zynqmp_disp_layer_enable(layer->disp, layer,
-				       ZYNQMP_DISP_LAYER_LIVE);
-	if (ret)
-		return ret;
-
-	if (layer->id == ZYNQMP_DISP_LAYER_GFX && disp->tpg_on) {
-		layer = &disp->layers[ZYNQMP_DISP_LAYER_VID];
-		zynqmp_disp_layer_set_tpg(disp, layer, disp->tpg_on);
-	}
-
-	if (zynqmp_disp_av_buf_vid_timing_src_is_int(&disp->av_buf) ||
-	    zynqmp_disp_av_buf_vid_clock_src_is_ps(&disp->av_buf)) {
-		dev_info(disp->dev,
-			 "Disabling the pipeline to change the clk/timing src");
-		zynqmp_disp_disable(disp, true);
-		zynqmp_disp_av_buf_set_vid_clock_src(&disp->av_buf, false);
-		zynqmp_disp_av_buf_set_vid_timing_src(&disp->av_buf, false);
-	}
-
-	zynqmp_disp_enable(disp);
-
-	return 0;
-}
-
-static void zynqmp_disp_bridge_disable(struct xlnx_bridge *bridge)
-{
-	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
-	struct zynqmp_disp *disp = layer->disp;
-
-	zynqmp_disp_disable(disp, false);
-
-	zynqmp_disp_layer_disable(disp, layer, ZYNQMP_DISP_LAYER_LIVE);
-	if (layer->id == ZYNQMP_DISP_LAYER_VID && disp->tpg_on)
-		zynqmp_disp_layer_set_tpg(disp, layer, disp->tpg_on);
-
-	if (!zynqmp_disp_layer_is_live(disp)) {
-		dev_info(disp->dev,
-			 "Disabling the pipeline to change the clk/timing src");
-		zynqmp_disp_disable(disp, true);
-		zynqmp_disp_av_buf_set_vid_clock_src(&disp->av_buf, true);
-		zynqmp_disp_av_buf_set_vid_timing_src(&disp->av_buf, true);
-		if (zynqmp_disp_layer_is_enabled(disp))
-			zynqmp_disp_enable(disp);
-	}
-}
-
-static int zynqmp_disp_bridge_set_input(struct xlnx_bridge *bridge,
-					u32 width, u32 height, u32 bus_fmt)
-{
-	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
-	int ret;
-
-	ret = zynqmp_disp_layer_check_size(layer->disp, layer, width, height);
-	if (ret)
-		return ret;
-
-	ret = zynqmp_disp_layer_set_live_fmt(layer->disp,  layer, bus_fmt);
-	if (ret)
-		dev_err(layer->disp->dev, "failed to set live fmt\n");
-
-	return ret;
-}
-
-static int zynqmp_disp_bridge_get_input_fmts(struct xlnx_bridge *bridge,
-					     const u32 **fmts, u32 *count)
-{
-	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
-
-	*fmts = layer->bus_fmts;
-	*count = layer->num_bus_fmts;
-
-	return 0;
-}
-
-/*
  * DRM plane functions
  */
 
@@ -2677,6 +2578,17 @@ zynqmp_disp_plane_atomic_update(struct drm_plane *plane,
 	if (!plane->state->crtc || !plane->state->fb)
 		return;
 
+	if (plane->state->fb == old_state->fb &&
+	    plane->state->crtc_x == old_state->crtc_x &&
+	    plane->state->crtc_y == old_state->crtc_y &&
+	    plane->state->crtc_w == old_state->crtc_w &&
+	    plane->state->crtc_h == old_state->crtc_h &&
+	    plane->state->src_x == old_state->src_x &&
+	    plane->state->src_y == old_state->src_y &&
+	    plane->state->src_w == old_state->src_w &&
+	    plane->state->src_h == old_state->src_h)
+		return;
+
 	if (old_state->fb &&
 	    old_state->fb->format->format != plane->state->fb->format->format)
 		zynqmp_disp_plane_disable(plane);
@@ -2779,17 +2691,6 @@ static int zynqmp_disp_create_plane(struct zynqmp_disp *disp)
 		drm_plane_helper_add(&layer->plane,
 				     &zynqmp_disp_plane_helper_funcs);
 		type = DRM_PLANE_TYPE_PRIMARY;
-	}
-
-	for (i = 0; i < ZYNQMP_DISP_NUM_LAYERS; i++) {
-		layer = &disp->layers[i];
-		layer->bridge.enable = &zynqmp_disp_bridge_enable;
-		layer->bridge.disable = &zynqmp_disp_bridge_disable;
-		layer->bridge.set_input = &zynqmp_disp_bridge_set_input;
-		layer->bridge.get_input_fmts =
-			&zynqmp_disp_bridge_get_input_fmts;
-		layer->bridge.of_node = layer->of_node;
-		xlnx_bridge_register(&layer->bridge);
 	}
 
 	/* Attach properties to each layers */
@@ -2945,7 +2846,8 @@ zynqmp_disp_crtc_atomic_disable(struct drm_crtc *crtc,
 	zynqmp_disp_clk_disable(disp->pclk, &disp->pclk_en);
 	zynqmp_disp_plane_disable(crtc->primary);
 	zynqmp_disp_disable(disp, true);
-	drm_crtc_vblank_off(crtc);
+	if (!disp->dpsub->external_crtc_attached)
+		drm_crtc_vblank_off(crtc);
 	pm_runtime_put_sync(disp->dev);
 }
 
@@ -3090,14 +2992,17 @@ static int zynqmp_disp_create_crtc(struct zynqmp_disp *disp)
 	disp->xlnx_crtc.get_format = &zynqmp_disp_get_format;
 	disp->xlnx_crtc.get_align = &zynqmp_disp_get_align;
 	disp->xlnx_crtc.get_dma_mask = &zynqmp_disp_get_dma_mask;
-	xlnx_crtc_register(disp->drm, &disp->xlnx_crtc);
+	/* Only register the PS DP CRTC if there is no external port/CRTC */
+	if (!disp->dpsub->external_crtc_attached)
+		xlnx_crtc_register(disp->drm, &disp->xlnx_crtc);
 
 	return 0;
 }
 
 static void zynqmp_disp_destroy_crtc(struct zynqmp_disp *disp)
 {
-	xlnx_crtc_unregister(disp->drm, &disp->xlnx_crtc);
+	if (!disp->dpsub->external_crtc_attached)
+		xlnx_crtc_unregister(disp->drm, &disp->xlnx_crtc);
 	zynqmp_disp_crtc_destroy(&disp->xlnx_crtc.crtc);
 }
 
@@ -3108,6 +3013,138 @@ static void zynqmp_disp_map_crtc_to_plane(struct zynqmp_disp *disp)
 
 	for (i = 0; i < ZYNQMP_DISP_NUM_LAYERS; i++)
 		disp->layers[i].plane.possible_crtcs = possible_crtcs;
+}
+
+/*
+ * Xlnx bridge functions
+ */
+
+static inline struct zynqmp_disp_layer
+*bridge_to_layer(struct xlnx_bridge *bridge)
+{
+	return container_of(bridge, struct zynqmp_disp_layer, bridge);
+}
+
+static int zynqmp_disp_bridge_enable(struct xlnx_bridge *bridge)
+{
+	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
+	struct zynqmp_disp *disp = layer->disp;
+	struct drm_crtc *crtc = &disp->xlnx_crtc.crtc;
+	struct drm_display_mode *adjusted_mode = &crtc->state->adjusted_mode;
+	struct videomode vm;
+	int ret, vrefresh;
+
+	if (!disp->_pl_pclk) {
+		dev_err(disp->dev, "PL clock is required for live\n");
+		return -ENODEV;
+	}
+
+	ret = zynqmp_disp_layer_check_size(disp, layer, layer->w, layer->h);
+	if (ret)
+		return ret;
+
+	/* Enable DP encoder if external CRTC attached */
+	if (disp->dpsub->external_crtc_attached)
+		zynqmp_disp_crtc_atomic_enable(crtc, NULL);
+
+	if (disp->vtc_bridge) {
+		drm_display_mode_to_videomode(adjusted_mode, &vm);
+		xlnx_bridge_set_timing(disp->vtc_bridge, &vm);
+		xlnx_bridge_enable(disp->vtc_bridge);
+	}
+
+	/* If external CRTC is connected through video layer, set alpha to 0 */
+	if (disp->dpsub->external_crtc_attached &&
+		layer->id == ZYNQMP_DISP_LAYER_VID)
+		disp->alpha = 0;
+
+	zynqmp_disp_set_g_alpha(disp, disp->alpha_en);
+	zynqmp_disp_set_alpha(disp, disp->alpha);
+	ret = zynqmp_disp_layer_enable(layer->disp, layer,
+				       ZYNQMP_DISP_LAYER_LIVE);
+	if (ret)
+		return ret;
+
+	if (layer->id == ZYNQMP_DISP_LAYER_GFX && disp->tpg_on) {
+		layer = &disp->layers[ZYNQMP_DISP_LAYER_VID];
+		zynqmp_disp_layer_set_tpg(disp, layer, disp->tpg_on);
+	}
+
+	if (zynqmp_disp_av_buf_vid_timing_src_is_int(&disp->av_buf) ||
+	    zynqmp_disp_av_buf_vid_clock_src_is_ps(&disp->av_buf)) {
+		dev_info(disp->dev,
+			 "Disabling the pipeline to change the clk/timing src");
+		zynqmp_disp_disable(disp, true);
+		zynqmp_disp_av_buf_set_vid_clock_src(&disp->av_buf, false);
+		zynqmp_disp_av_buf_set_vid_timing_src(&disp->av_buf, false);
+	}
+
+	zynqmp_disp_enable(disp);
+
+	return 0;
+}
+
+static void zynqmp_disp_bridge_disable(struct xlnx_bridge *bridge)
+{
+	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
+	struct zynqmp_disp *disp = layer->disp;
+
+	zynqmp_disp_disable(disp, false);
+
+	zynqmp_disp_layer_disable(disp, layer, ZYNQMP_DISP_LAYER_LIVE);
+	if (layer->id == ZYNQMP_DISP_LAYER_VID && disp->tpg_on)
+		zynqmp_disp_layer_set_tpg(disp, layer, disp->tpg_on);
+
+	if (!zynqmp_disp_layer_is_live(disp)) {
+		dev_info(disp->dev,
+			 "Disabling the pipeline to change the clk/timing src");
+		zynqmp_disp_disable(disp, true);
+		zynqmp_disp_av_buf_set_vid_clock_src(&disp->av_buf, true);
+		zynqmp_disp_av_buf_set_vid_timing_src(&disp->av_buf, true);
+		if (zynqmp_disp_layer_is_enabled(disp))
+			zynqmp_disp_enable(disp);
+	}
+}
+
+static int zynqmp_disp_bridge_set_input(struct xlnx_bridge *bridge,
+					u32 width, u32 height, u32 bus_fmt)
+{
+	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
+	int ret;
+
+	ret = zynqmp_disp_layer_check_size(layer->disp, layer, width, height);
+	if (ret)
+		return ret;
+
+	ret = zynqmp_disp_layer_set_live_fmt(layer->disp,  layer, bus_fmt);
+	if (ret)
+		dev_err(layer->disp->dev, "failed to set live fmt\n");
+
+	return ret;
+}
+
+static int zynqmp_disp_bridge_get_input_fmts(struct xlnx_bridge *bridge,
+					     const u32 **fmts, u32 *count)
+{
+	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
+
+	*fmts = layer->bus_fmts;
+	*count = layer->num_bus_fmts;
+
+	return 0;
+}
+
+static int zynqmp_disp_bridge_set_timing(struct xlnx_bridge *bridge,
+					     struct videomode *vm)
+{
+	struct zynqmp_disp_layer *layer = bridge_to_layer(bridge);
+	struct zynqmp_disp *disp = layer->disp;
+	struct drm_crtc *crtc = &disp->xlnx_crtc.crtc;
+	struct drm_display_mode *adjusted_mode = &crtc->state->adjusted_mode;
+
+	drm_display_mode_from_videomode(vm, adjusted_mode);
+
+	return 0;
 }
 
 /*
@@ -3155,6 +3192,9 @@ void zynqmp_disp_unbind(struct device *dev, struct device *master, void *data)
 {
 	struct zynqmp_dpsub *dpsub = dev_get_drvdata(dev);
 	struct zynqmp_disp *disp = dpsub->disp;
+
+	if (disp->vtc_bridge)
+		of_xlnx_bridge_put(disp->vtc_bridge);
 
 	zynqmp_disp_destroy_crtc(disp);
 	zynqmp_disp_destroy_plane(disp);
@@ -3225,6 +3265,9 @@ int zynqmp_disp_probe(struct platform_device *pdev)
 	struct zynqmp_disp *disp;
 	struct resource *res;
 	int ret;
+	struct zynqmp_disp_layer *layer;
+	unsigned int i;
+	struct device_node *vtc_node;
 
 	disp = devm_kzalloc(&pdev->dev, sizeof(*disp), GFP_KERNEL);
 	if (!disp)
@@ -3318,11 +3361,39 @@ int zynqmp_disp_probe(struct platform_device *pdev)
 		}
 	}
 
+	/* VTC Bridge support */
+	vtc_node = of_parse_phandle(disp->dev->of_node, "xlnx,bridge", 0);
+	if (vtc_node) {
+		disp->vtc_bridge = of_xlnx_bridge_get(vtc_node);
+		if (!disp->vtc_bridge) {
+			dev_info(disp->dev, "Didn't get vtc bridge instance\n");
+			return -EPROBE_DEFER;
+		}
+	} else {
+		dev_info(disp->dev, "vtc bridge property not present\n");
+	}
+
 	ret = zynqmp_disp_layer_create(disp);
 	if (ret)
 		goto error_aclk;
 
 	zynqmp_disp_init(disp);
+
+	/*
+	 * Register live bridges so external CRTCs will be able probe
+	 * successfully
+	 */
+	for (i = 0; i < ZYNQMP_DISP_NUM_LAYERS; i++) {
+		layer = &disp->layers[i];
+		layer->bridge.enable = &zynqmp_disp_bridge_enable;
+		layer->bridge.disable = &zynqmp_disp_bridge_disable;
+		layer->bridge.set_input = &zynqmp_disp_bridge_set_input;
+		layer->bridge.get_input_fmts =
+			&zynqmp_disp_bridge_get_input_fmts;
+		layer->bridge.set_timing = &zynqmp_disp_bridge_set_timing;
+		layer->bridge.of_node = layer->of_node;
+		xlnx_bridge_register(&layer->bridge);
+	}
 
 	return 0;
 

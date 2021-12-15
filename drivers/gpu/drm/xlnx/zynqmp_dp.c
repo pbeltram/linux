@@ -1681,19 +1681,16 @@ int zynqmp_dp_bind(struct device *dev, struct device *master, void *data)
 	struct drm_encoder *encoder = &dp->encoder;
 	struct drm_connector *connector = &dp->connector;
 	struct drm_device *drm = data;
-	struct device_node *port;
 	int ret;
 
 	if (!dp->num_lanes)
 		return 0;
 
 	encoder->possible_crtcs |= zynqmp_disp_get_crtc_mask(dpsub->disp);
-	for_each_child_of_node(dev->of_node, port) {
-		if (!port->name || of_node_cmp(port->name, "port"))
-			continue;
-		encoder->possible_crtcs |= drm_of_find_possible_crtcs(drm,
-								      port);
-	}
+	if (dpsub->external_crtc_attached)
+		encoder->possible_crtcs |=
+			drm_of_find_possible_crtcs(drm, dev->of_node);
+
 	drm_encoder_init(drm, encoder, &zynqmp_dp_encoder_funcs,
 			 DRM_MODE_ENCODER_TMDS, NULL);
 	drm_encoder_helper_add(encoder, &zynqmp_dp_encoder_helper_funcs);
@@ -1785,7 +1782,8 @@ static irqreturn_t zynqmp_dp_irq_handler(int irq, void *data)
 	zynqmp_dp_write(dp->iomem, ZYNQMP_DP_SUB_TX_INTR_STATUS, status);
 
 	/* The DP vblank will not be enabled with remote crtc device */
-	if (status & ZYNQMP_DP_TX_INTR_VBLANK_START)
+	if (status & ZYNQMP_DP_TX_INTR_VBLANK_START &&
+		!dp->dpsub->external_crtc_attached)
 		zynqmp_disp_handle_vblank(dp->dpsub->disp);
 
 	if (status & ZYNQMP_DP_TX_INTR_HPD_EVENT)
@@ -1818,6 +1816,7 @@ int zynqmp_dp_probe(struct platform_device *pdev)
 	struct zynqmp_dpsub *dpsub;
 	struct zynqmp_dp *dp;
 	struct resource *res;
+	struct device_node *port;
 	unsigned int i;
 	int irq, ret;
 
@@ -1905,6 +1904,14 @@ out:
 	dpsub = platform_get_drvdata(pdev);
 	dpsub->dp = dp;
 	dp->dpsub = dpsub;
+
+	for_each_child_of_node(pdev->dev.of_node, port) {
+		if (!port->name || of_node_cmp(port->name, "port"))
+			continue;
+
+		dpsub->external_crtc_attached = true;
+		break;
+	}
 
 	dev_dbg(dp->dev,
 		"ZynqMP DisplayPort Tx driver probed with %u phy lanes\n",
