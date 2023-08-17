@@ -30,8 +30,9 @@ void __maybe_unused axienet_bd_free(struct net_device *ndev,
 	struct axienet_local *lp = netdev_priv(ndev);
 
 	for (i = 0; i < lp->rx_bd_num; i++) {
-		dma_unmap_single(ndev->dev.parent, q->rx_bd_v[i].phys,
-				 lp->max_frm_size, DMA_FROM_DEVICE);
+		if (q->rx_bd_v[i].phys)
+			dma_unmap_single(ndev->dev.parent, q->rx_bd_v[i].phys,
+					 lp->max_frm_size, DMA_FROM_DEVICE);
 		dev_kfree_skb((struct sk_buff *)
 			      (q->rx_bd_v[i].sw_id_offset));
 	}
@@ -169,6 +170,11 @@ static int __dma_rxq_init(struct net_device *ndev,
 						    skb->data,
 						    lp->max_frm_size,
 						    DMA_FROM_DEVICE);
+		if (unlikely(dma_mapping_error(ndev->dev.parent, q->rx_bd_v[i].phys))) {
+			q->rx_bd_v[i].phys = 0;
+			dev_err(&ndev->dev, "axidma map error\n");
+			goto out;
+		}
 		q->rx_bd_v[i].cntrl = lp->max_frm_size;
 	}
 
@@ -381,25 +387,7 @@ void __maybe_unused axienet_dma_err_handler(unsigned long data)
 	lp->axienet_config->setoptions(ndev, lp->options &
 				       ~(XAE_OPTION_TXEN | XAE_OPTION_RXEN));
 
-	if (lp->axienet_config->mactype != XAXIENET_10G_25G) {
-		mutex_lock(&lp->mii_bus->mdio_lock);
-		axienet_mdio_disable(lp);
-		axienet_mdio_wait_until_ready(lp);
-		/* Disable the MDIO interface till Axi Ethernet Reset is
-		 * Completed. When we do an Axi Ethernet reset, it resets the
-		 * Complete core including the MDIO. So if MDIO is not disabled
-		 * When the reset process is started,
-		 * MDIO will be broken afterwards.
-		 */
-	}
-
 	__axienet_device_reset(q);
-
-	if (lp->axienet_config->mactype != XAXIENET_10G_25G) {
-		axienet_mdio_enable(lp);
-		axienet_mdio_wait_until_ready(lp);
-		mutex_unlock(&lp->mii_bus->mdio_lock);
-	}
 
 	for (i = 0; i < lp->tx_bd_num; i++) {
 		cur_p = &q->tx_bd_v[i];

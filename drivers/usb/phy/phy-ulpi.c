@@ -271,3 +271,82 @@ otg_ulpi_create(struct usb_phy_io_ops *ops,
 }
 EXPORT_SYMBOL_GPL(otg_ulpi_create);
 
+static int ulpi_phy_probe(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+	struct resource *res;
+	struct ulpi_phy *uphy;
+	bool flag;
+	int ret;
+
+	uphy = devm_kzalloc(&pdev->dev, sizeof(*uphy), GFP_KERNEL);
+	if (!uphy)
+		return -ENOMEM;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "no phy I/O memory resource defined\n");
+		return -ENODEV;
+	}
+
+	uphy->regs = devm_ioremap(&pdev->dev, res->start, resource_size(res));
+	if (!uphy->regs) {
+		dev_err(&pdev->dev, "failed to map phy I/O memory\n");
+		return -EFAULT;
+	}
+
+	if (IS_ERR(uphy->regs))
+		return PTR_ERR(uphy->regs);
+
+	if (of_property_read_u32(np, "view-port", &uphy->vp_offset))
+		dev_dbg(&pdev->dev, "Missing view-port property\n");
+
+	if (IS_ERR(uphy->regs)) {
+		dev_err(&pdev->dev, "view-port register not specified\n");
+		return PTR_ERR(uphy->regs);
+	}
+
+	flag = of_property_read_bool(np, "drv-vbus");
+	if (flag)
+		uphy->flags |= ULPI_OTG_DRVVBUS | ULPI_OTG_DRVVBUS_EXT;
+
+	uphy->usb_phy = otg_ulpi_create(&ulpi_viewport_access_ops, uphy->flags);
+
+	uphy->usb_phy->dev = &pdev->dev;
+
+	uphy->usb_phy->io_priv = uphy->regs + uphy->vp_offset;
+
+	ret = usb_add_phy_dev(uphy->usb_phy);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int ulpi_phy_remove(struct platform_device *pdev)
+{
+	struct ulpi_phy *uphy = platform_get_drvdata(pdev);
+
+	usb_remove_phy(uphy->usb_phy);
+
+	return 0;
+}
+
+static const struct of_device_id ulpi_phy_table[] = {
+	{ .compatible = "ulpi-phy" },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, ulpi_phy_table);
+
+static struct platform_driver ulpi_phy_driver = {
+	.probe		= ulpi_phy_probe,
+	.remove		= ulpi_phy_remove,
+	.driver		= {
+		.name	= "ulpi-phy",
+		.of_match_table = ulpi_phy_table,
+	},
+};
+module_platform_driver(ulpi_phy_driver);
+
+MODULE_DESCRIPTION("ULPI PHY driver");
+MODULE_LICENSE("GPL v2");

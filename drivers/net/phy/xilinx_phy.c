@@ -81,22 +81,6 @@ static int xilinxphy_read_status(struct phy_device *phydev)
 			phydev->speed = SPEED_10;
 	}
 
-	/* For 1000BASE-X Phy Mode the speed/duplex will always be
-	 * 1000Mbps/fullduplex
-	 */
-	if (phydev->dev_flags == XAE_PHY_TYPE_1000BASE_X) {
-		phydev->duplex = DUPLEX_FULL;
-		phydev->speed = SPEED_1000;
-	}
-
-	/* For 2500BASE-X Phy Mode the speed/duplex will always be
-	 * 2500Mbps/fullduplex
-	 */
-	if (phydev->dev_flags == XAE_PHY_TYPE_2500) {
-		phydev->duplex = DUPLEX_FULL;
-		phydev->speed = SPEED_2500;
-	}
-
 	return 0;
 }
 
@@ -105,6 +89,9 @@ static int xilinxphy_of_init(struct phy_device *phydev)
 	struct device *dev = &phydev->mdio.dev;
 	struct device_node *of_node = dev->of_node;
 	u32 phytype;
+	struct device_node *fixed_node;
+	u32 speed;
+	int ret;
 
 	if (!IS_ENABLED(CONFIG_OF_MDIO))
 		return 0;
@@ -113,10 +100,38 @@ static int xilinxphy_of_init(struct phy_device *phydev)
 		return -ENODEV;
 
 	if (!of_property_read_u32(of_node, "xlnx,phy-type", &phytype)) {
-		if (phytype == XAE_PHY_TYPE_1000BASE_X)
-			phydev->dev_flags |= XAE_PHY_TYPE_1000BASE_X;
-		if (phytype == XAE_PHY_TYPE_2500)
-			phydev->dev_flags |= XAE_PHY_TYPE_2500;
+		if (phytype == XAE_PHY_TYPE_1000BASE_X) {
+			phydev->dev_flags = XAE_PHY_TYPE_1000BASE_X;
+			/* For 1000BASE-X Phy Mode the speed/duplex will always be
+			 * 1000Mbps/fullduplex
+			 */
+			phydev->duplex = DUPLEX_FULL;
+			phydev->speed = SPEED_1000;
+		}
+		else if (phytype == XAE_PHY_TYPE_2500) {
+			phydev->dev_flags = XAE_PHY_TYPE_2500;
+			/* For 2500BASE-X Phy Mode the speed/duplex will always be
+			 * 2500Mbps/fullduplex
+			 */
+			phydev->duplex = DUPLEX_FULL;
+			phydev->speed = SPEED_2500;
+		}
+	}
+
+	fixed_node = of_get_child_by_name(of_node, "fixed-link");
+	if (fixed_node) {
+		/* No autonegotiation for fixed-link. */
+		phydev->autoneg = AUTONEG_DISABLE;
+
+		ret = of_property_read_u32(fixed_node, "speed", &speed);
+		if (ret == 0)
+			phydev->speed = speed;
+
+		phydev->duplex = DUPLEX_HALF;
+		if (of_property_read_bool(fixed_node, "full-duplex"))
+			phydev->duplex = DUPLEX_FULL;
+
+		of_node_put(fixed_node);
 	}
 
 	return 0;

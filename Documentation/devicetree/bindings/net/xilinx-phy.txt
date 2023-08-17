@@ -6,10 +6,17 @@ Required properties:
 Optional properties:
 	- xlnx,phy-type - Describes type 1000BaseX (set to 0x5) or
 			  SGMII (set to 0x4)
+  - compatible - Id of Xilinx PCS/PMA PHY from PHY registers 2 and 3.
+  - fixed-link - Disable auto-negotiation and set fixed link parameters.
 
 Example:
 
 	ethernet-phy@9 {
+    compatible = "ethernet-phy-id0174.0c00";
 		reg = <9>;
 		xlnx,phy-type = <0x5>;
+    fixed-link {
+      speed = <1000>;
+      full-duplex;
+    };
 	};

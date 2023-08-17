@@ -146,3 +146,11 @@ x509.genkey
 
 # Clang's compilation database file
 /compile_commands.json
+
+# Enclustra buildscripts related files
+postfetch.sh
+postbuild.sh
+
+# Petalinux
+oe-logs
+oe-workdir
